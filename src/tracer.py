@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple, Callable, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import cv2
 
 from waveoptics import gen_aperture, create_wf, display_wf
 from utils import (
@@ -598,3 +599,85 @@ def trace_all(
     irrad = torch.abs(U) ** 2
 
     return irrad, U, (ps[..., :2] if 'ps' in locals() else torch.empty(0)), (oss if 'oss' in locals() else torch.empty(0))
+
+
+
+def place_img_ongrid(
+        pos: torch.Tensor,
+        obj_max: float,
+        act_max: float,
+        channel_idx: int=0,
+        res: int=511,
+        filename_list: List[str]=['cameraman.png'],
+        ) -> torch.Tensor:
+    datatype = torch.float
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    act_max  = torch.amax(pos[:, :2]) * 1.02
+    obj_max = torch.amax(pos[:, :2])
+    pxl_size = (2 * act_max) / res
+    obj_pxls = int(obj_max // pxl_size)
+    start_idx = int(res // 2 - obj_pxls)
+    end_idx = int(res // 2 + obj_pxls) + 1
+
+    img_stack = np.zeros(
+        (end_idx - start_idx,
+            end_idx - start_idx,
+            len(filename_list)))
+    for i, fn in enumerate(filename_list):
+        img = np.rot90(np.flip(cv2.imread(fn)[:, :, channel_idx] / 255., axis=1), 3)
+        img_rs = cv2.resize(
+            img, (end_idx - start_idx, end_idx - start_idx))
+        img_stack[:, :, i] = img_rs
+    if not torch.amax(pos[:, :2]) < act_max:
+        print('scene boundary', torch.amax(pos[:, :2]), act_max)
+    assert torch.amax(pos[:, :2]) < act_max
+
+    grids = torch.zeros(
+        res,
+        res,
+        len(filename_list),
+        dtype=datatype,
+        device=device)
+    grids[start_idx:end_idx, start_idx:end_idx,
+          :] = torch.from_numpy(img_stack).to(device)
+
+    pos_on_grid = pos[:, :2] / pxl_size + res // 2
+    top_y = (torch.ceil(pos_on_grid[:, 0])).to(torch.long)
+    bot_y = (torch.floor(pos_on_grid[:, 0])).to(torch.long)
+    right_x = (torch.ceil(pos_on_grid[:, 1])).to(torch.long)
+    left_x = (torch.floor(pos_on_grid[:, 1])).to(torch.long)
+
+    alpha = (pos_on_grid[:, 0] - bot_y)[:, None]
+    beta = (pos_on_grid[:, 1] - left_x)[:, None]
+    lu_val = grids[top_y, left_x]
+    lb_val = grids[bot_y, left_x]
+    ru_val = grids[top_y, right_x] 
+    rb_val = grids[bot_y, right_x] 
+    interp_val = alpha * beta * ru_val + \
+        (1 - alpha) * beta * rb_val + alpha * (1 - beta) * lu_val + (1 - alpha) * (1 - beta) * lb_val
+    return interp_val
+
+
+def place_img_on_grid_exact(
+    res: int,
+    channel_idx: int,
+    filename_list: List[str],
+    ) -> torch.Tensor:
+    # for validation only: freeze the input scene intensity (make this step
+    # stupid but for fair comparison...)
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    img_stack2 = np.zeros((res, res, len(filename_list)))
+    for j, fn in enumerate(filename_list):
+        img = cv2.imread(fn)[:, :, channel_idx] / 255.
+        img_rs = cv2.resize(img, (res, res))
+        img_stack2[:, :, j] = img_rs
+    interp_val = torch.from_numpy(img_stack2).view(
+        res * res, len(filename_list)).to(device)
+    return interp_val
