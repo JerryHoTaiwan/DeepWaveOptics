@@ -1,9 +1,10 @@
 import torch
 import numpy as np
+import cv2
 import matplotlib.pyplot as plt
 from typing import Any, Dict, List, Tuple
 import sys
-from tracer import trace_all
+from tracer import trace_all, sample_ray_uniform_rot
 from utils import create_sensor_grids
 sys.path.append("../")
 import diffoptics as do
@@ -165,3 +166,50 @@ def plot_ray_zoomin_img_sft(
                 psf_idx))
     plt.close()
     return img_rayoptics
+
+
+def plot_loss_curve(config: Dict[str, Any], loss_list: torch.Tensor, dataloss_list: torch.Tensor, rmsloss_list: torch.Tensor, best_idx: int, ep: int) -> None:
+    plt.plot(loss_list.numpy()[:ep + 1])
+    plt.savefig(config["record_folder"] + '/loss_trend.png')
+    plt.close()
+    plt.plot(dataloss_list.numpy()[:ep + 1])
+    plt.title('Best at {}'.format(best_idx))
+    plt.savefig(config["record_folder"] + '/loss_data_trend.png')
+    plt.close()
+    plt.plot(rmsloss_list.numpy()[:ep + 1])
+    plt.savefig(config["record_folder"] + '/loss_rms_trend.png')
+    plt.close()
+    
+    
+def plot_e2e(config: Dict[str, Any], meas: torch.Tensor, meas_full: torch.Tensor, gt: torch.Tensor,
+             pred: torch.Tensor, lens: do.Lensgroup, R: float, wavelength: float, ep: int) -> None:
+    meas_scale = 200 / torch.amax(meas)
+    meas_full_scale = 200 / torch.amax(meas_full)
+    meas_np = meas_scale.detach().cpu().numpy() * meas.permute(1,
+                                                               2, 0).detach().cpu().numpy()
+    meas_np_full = meas_full_scale.detach().cpu().numpy(
+    ) * meas_full.permute(1, 2, 0).detach().cpu().numpy()
+    gt_np = 200 * gt.permute(1, 2, 0).detach().cpu().numpy()
+    pred_np = 200 * pred.permute(1, 2, 0).detach().cpu().numpy()
+    cv2.imwrite(
+        config["record_folder"] +
+        '/meas/meas_rgb_mosaic_{}.png'.format(ep),
+        np.rot90(meas_np))
+    cv2.imwrite(
+        config["record_folder"] +
+        '/meas_full/meas_{}.png'.format(ep),
+        np.rot90(meas_np_full))
+    cv2.imwrite(
+        config["record_folder"] +
+        '/recover_full/recover_rgb_{}.png'.format(ep),
+        np.rot90(pred_np))
+    cv2.imwrite(
+        config["record_folder"] +
+        '/gt/gt_full_{}.png'.format(ep),
+        np.rot90(gt_np))
+    print(
+        'max pred',
+        np.amax(pred_np),
+        config["record_folder"] +
+        '/recover_full/recover_rgb_{}.png'.format(ep))
+    return
