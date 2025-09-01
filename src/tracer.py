@@ -603,64 +603,95 @@ def trace_all(
     return irrad, U, (ps[..., :2] if 'ps' in locals() else torch.empty(0)), (oss if 'oss' in locals() else torch.empty(0))
 
 
-
 def place_img_ongrid(
-        pos: torch.Tensor,
-        obj_max: float,
-        act_max: float,
-        channel_idx: int=0,
-        res: int=511,
-        filename_list: List[str]=['cameraman.png'],
-        ) -> torch.Tensor:
-    datatype = torch.float
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    pos: torch.Tensor,
+    obj_max: float,
+    act_max: float,
+    channel_idx: int = 0,
+    res: int = 511,
+    filename_list: Optional[List[str]] = None,
+    cfg_dtype: Optional[str] = "float32",
+) -> torch.Tensor:
+    """
+    Bilinearly sample an image stack at positions `pos[:, :2]` placed on a square grid.
 
-    act_max  = torch.amax(pos[:, :2]) * 1.02
-    obj_max = torch.amax(pos[:, :2])
-    pxl_size = (2 * act_max) / res
-    obj_pxls = int(obj_max // pxl_size)
+    Args:
+        pos: (N,3) or (N,2) tensor of positions (y, x [, z]) in scene units.
+        obj_max: nominal object max radius (ignored, recomputed internally for safety).
+        act_max: nominal active radius (ignored, recomputed internally for safety).
+        channel_idx: cv2 channel index to extract (BGR order).
+        res: grid resolution (res x res).
+        filename_list: list of image filepaths. Defaults to ["cameraman.png"].
+        cfg_dtype: dtype string ("float32" or "float64").
+
+    Returns:
+        (N, K) tensor of interpolated values, where K = len(filename_list).
+    """
+    if filename_list is None:
+        filename_list = ["cameraman.png"]
+
+    device = get_device()
+    dtype = resolve_dtype(cfg_dtype)
+
+    # Recompute extents from data (kept for backward compatibility)
+    act_max_val = torch.amax(pos[:, :2]).item() * 1.02
+    obj_max_val = torch.amax(pos[:, :2]).item()
+
+    pxl_size = (2.0 * act_max_val) / float(res)
+    obj_pxls = int(obj_max_val // pxl_size)
     start_idx = int(res // 2 - obj_pxls)
     end_idx = int(res // 2 + obj_pxls) + 1
+    side = max(1, min(end_idx - start_idx, res))
 
-    img_stack = np.zeros(
-        (end_idx - start_idx,
-            end_idx - start_idx,
-            len(filename_list)))
+    # Load images -> (side, side, K) stack
+    img_stack = np.zeros((side, side, len(filename_list)), dtype=np.float32)
     for i, fn in enumerate(filename_list):
-        img = np.rot90(np.flip(cv2.imread(fn)[:, :, channel_idx] / 255., axis=1), 3)
-        img_rs = cv2.resize(
-            img, (end_idx - start_idx, end_idx - start_idx))
+        im = cv2.imread(fn, cv2.IMREAD_COLOR)
+        if im is None:
+            raise FileNotFoundError(f"Could not read image: {fn}")
+        ch = im[:, :, channel_idx].astype(np.float32) / 255.0
+        # Preserve orientation: flip then rotate
+        img_proc = np.rot90(np.flip(ch, axis=1), 3)
+        img_rs = cv2.resize(img_proc, (side, side), interpolation=cv2.INTER_AREA)
         img_stack[:, :, i] = img_rs
-    if not torch.amax(pos[:, :2]) < act_max:
-        print('scene boundary', torch.amax(pos[:, :2]), act_max)
-    assert torch.amax(pos[:, :2]) < act_max
 
-    grids = torch.zeros(
-        res,
-        res,
-        len(filename_list),
-        dtype=datatype,
-        device=device)
-    grids[start_idx:end_idx, start_idx:end_idx,
-          :] = torch.from_numpy(img_stack).to(device)
+    # Check that all positions lie inside
+    max_pos = torch.amax(pos[:, :2])
+    if not (max_pos < act_max_val):
+        print("Scene boundary exceeded:", max_pos.item(), act_max_val)
+    assert max_pos < act_max_val
 
-    pos_on_grid = pos[:, :2] / pxl_size + res // 2
-    top_y = (torch.ceil(pos_on_grid[:, 0])).to(torch.long)
-    bot_y = (torch.floor(pos_on_grid[:, 0])).to(torch.long)
-    right_x = (torch.ceil(pos_on_grid[:, 1])).to(torch.long)
-    left_x = (torch.floor(pos_on_grid[:, 1])).to(torch.long)
+    # Place stack into full grid
+    grids = torch.zeros((res, res, len(filename_list)), dtype=dtype, device=device)
+    s0, e0 = max(0, start_idx), min(res, end_idx)
+    sub_y0 = max(0, -start_idx)
+    sub_y1 = sub_y0 + (e0 - s0)
+    grids[s0:e0, s0:e0, :] = torch.from_numpy(img_stack[sub_y0:sub_y1, sub_y0:sub_y1, :]).to(
+        device=device, dtype=dtype
+    )
 
-    alpha = (pos_on_grid[:, 0] - bot_y)[:, None]
-    beta = (pos_on_grid[:, 1] - left_x)[:, None]
-    lu_val = grids[top_y, left_x]
-    lb_val = grids[bot_y, left_x]
-    ru_val = grids[top_y, right_x] 
-    rb_val = grids[bot_y, right_x] 
-    interp_val = alpha * beta * ru_val + \
-        (1 - alpha) * beta * rb_val + alpha * (1 - beta) * lu_val + (1 - alpha) * (1 - beta) * lb_val
+    # Position to grid coordinates
+    center_idx = (res - 1) / 2.0
+    pos_on_grid = pos[:, :2].to(dtype=torch.float32, device=device) / pxl_size + center_idx
+    y, x = pos_on_grid[:, 0], pos_on_grid[:, 1]
+
+    # Bilinear interpolation
+    y0 = torch.clamp(torch.floor(y).to(torch.long), 0, res - 1)
+    x0 = torch.clamp(torch.floor(x).to(torch.long), 0, res - 1)
+    y1 = torch.clamp(y0 + 1, 0, res - 1)
+    x1 = torch.clamp(x0 + 1, 0, res - 1)
+
+    wy = (y - y0.to(y.dtype)).unsqueeze(1)
+    wx = (x - x0.to(x.dtype)).unsqueeze(1)
+
+    lb = grids[y0, x0]
+    rb = grids[y0, x1]
+    lu = grids[y1, x0]
+    ru = grids[y1, x1]
+
+    b0 = lb * (1 - wx) + rb * wx
+    b1 = lu * (1 - wx) + ru * wx
+    interp_val = b0 * (1 - wy) + b1 * wy
     return interp_val
 
 
@@ -668,18 +699,31 @@ def place_img_on_grid_exact(
     res: int,
     channel_idx: int,
     filename_list: List[str],
-    ) -> torch.Tensor:
-    # for validation only: freeze the input scene intensity (make this step
-    # stupid but for fair comparison...)
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    img_stack2 = np.zeros((res, res, len(filename_list)))
+    cfg_dtype: Optional[str] = "float32",
+) -> torch.Tensor:
+    """
+    Validation helper: resize each image to (res,res) and flatten.
+
+    Args:
+        res: output side length.
+        channel_idx: cv2 channel index to extract (BGR order).
+        filename_list: list of image file paths.
+        cfg_dtype: dtype string ("float32" or "float64").
+
+    Returns:
+        (res*res, K) tensor in [0,1].
+    """
+    device = get_device()
+    dtype = resolve_dtype(cfg_dtype)
+
+    stack = np.zeros((res, res, len(filename_list)), dtype=np.float32)
     for j, fn in enumerate(filename_list):
-        img = cv2.imread(fn)[:, :, channel_idx] / 255.
-        img_rs = cv2.resize(img, (res, res))
-        img_stack2[:, :, j] = img_rs
-    interp_val = torch.from_numpy(img_stack2).view(
-        res * res, len(filename_list)).to(device)
-    return interp_val
+        im = cv2.imread(fn, cv2.IMREAD_COLOR)
+        if im is None:
+            raise FileNotFoundError(f"Could not read image: {fn}")
+        ch = im[:, :, channel_idx].astype(np.float32) / 255.0
+        img_rs = cv2.resize(ch, (res, res), interpolation=cv2.INTER_AREA)
+        stack[:, :, j] = img_rs
+
+    out = torch.from_numpy(stack).to(device=device, dtype=dtype)
+    return out.view(res * res, len(filename_list))
