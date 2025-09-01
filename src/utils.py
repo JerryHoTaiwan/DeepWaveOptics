@@ -1,8 +1,28 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional, Sequence
 import os
 import torch
+
+
+# =========================
+# Device / dtype utilities
+# =========================
+
+def get_device() -> torch.device:
+    """Return CUDA device if available, else CPU."""
+    return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+
+def resolve_dtype(cfg_dtype: Optional[str], default: torch.dtype = torch.float32) -> torch.dtype:
+    """Map a config dtype string to a torch dtype."""
+    if cfg_dtype is None:
+        return default
+    if cfg_dtype.lower() == "float64":
+        return torch.float64
+    if cfg_dtype.lower() == "float32":
+        return torch.float32
+    raise ValueError(f"Unsupported dtype string: {cfg_dtype}")
 
 
 def normalize_vector_torch(vector: torch.Tensor) -> torch.Tensor:
