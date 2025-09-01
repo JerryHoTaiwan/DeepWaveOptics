@@ -31,47 +31,73 @@ def normalize_vector_torch(vector: torch.Tensor) -> torch.Tensor:
     return norm_vector
 
 
-def hit_sphere_parallel(origin: torch.Tensor,
-                        direction: torch.Tensor,
-                        center: torch.Tensor,
-                        r: float) -> Tuple[torch.Tensor,
-                                           torch.Tensor,
-                                           torch.Tensor,
-                                           torch.Tensor,
-                                           torch.Tensor]:
-    # check if there's valid t
-    # origin: Nx3
-    # direction: Nx3
-    oc = origin - center[None, :]  # Nx3
-    a = torch.sum(direction * direction, dim=1)[:, None]  # Nx1
-    b = 2 * torch.sum(oc * direction, dim=1)[:, None]  # Nx1
-    c = torch.sum(oc * oc, dim=1)[:, None] - r * r  # Nx1
-    discriminant = b * b - 4 * a * c  # Nx1
-    intersect = (discriminant > 10e-8).squeeze()  # N
+def hit_sphere_parallel(
+    origin: torch.Tensor,
+    direction: torch.Tensor,
+    center: torch.Tensor,
+    r: float
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Vectorized ray-sphere intersection.
 
-    # avoid passing Nan in gradient
-    disc_valid = torch.clone(discriminant)
+    Args:
+        origin:    (N,3) ray origins
+        direction: (N,3) ray directions (need not be normalized)
+        center:    (3,)  sphere center
+        r:         radius (scalar)
 
-    # if yes, check if the intersections lie in in aperture
-    t0 = (-b + torch.sqrt(disc_valid)) / (2 * a)
-    t1 = (-b - torch.sqrt(disc_valid)) / (2 * a)
+    Returns:
+        intersect:  (N,) bool mask whether discriminant > 0
+        t0, t1:     (N,1) parametric distances (may be NaN for non-intersections)
+        p0, p1:     (N,3) intersection points (may be NaN for non-intersections)
+    """
+    if origin.shape != direction.shape or origin.size(-1) != 3:
+        raise ValueError("origin and direction must both be (N,3)")
 
-    intersect_0 = origin + t0 * direction  # Nx3
-    intersect_1 = origin + t1 * direction  # Nx3
-    return intersect, t0, t1, intersect_0, intersect_1
+    oc = origin - center.view(1, 3)          # (N,3)
+    a = torch.sum(direction * direction, dim=1, keepdim=True)     # (N,1)
+    b = 2.0 * torch.sum(oc * direction, dim=1, keepdim=True)      # (N,1)
+    c = torch.sum(oc * oc, dim=1, keepdim=True) - (r * r)         # (N,1)
+
+    discriminant = b * b - 4.0 * a * c                            # (N,1)
+    intersect = (discriminant > 1e-8).squeeze(1)                  # (N,)
+
+    # Clamp to avoid NaNs in sqrt; we’ll mask later anyway.
+    disc_clamped = torch.clamp(discriminant, min=0.0)
+    sqrt_disc = torch.sqrt(disc_clamped)
+
+    denom = 2.0 * a
+    # To avoid /0, where a==0 set outputs to NaN; mask will handle
+    safe_denom = denom != 0
+    t0 = torch.full_like(denom, float("nan"))
+    t1 = torch.full_like(denom, float("nan"))
+    t0[safe_denom] = (-b[safe_denom] + sqrt_disc[safe_denom]) / denom[safe_denom]
+    t1[safe_denom] = (-b[safe_denom] - sqrt_disc[safe_denom]) / denom[safe_denom]
+
+    p0 = origin + t0 * direction
+    p1 = origin + t1 * direction
+    return intersect, t0, t1, p0, p1
 
 
 def point2line_distance(point: torch.Tensor, line: torch.Tensor) -> torch.Tensor:
-    # point: Nx3
-    # line: ax+by+c=0, 1x3
-    a = line[0]
-    b = line[1]
-    c = line[2]
-    x = point[:, 0]
-    y = point[:, 1]
-    d = torch.abs(a * x + b * y + c) / torch.sqrt(a * a + b * b)
-    sign = torch.sign(a * x + b * y + c)
-    return d * sign
+    """
+    Signed distance from points to a 2D line ax + by + c = 0.
+
+    Args:
+        point: (N,3) or (N,2); only x,y are used
+        line:  (3,) with [a,b,c]
+
+    Returns:
+        (N,) signed distances.
+    """
+    a, b, c = line[..., 0], line[..., 1], line[..., 2]
+    x = point[..., 0]
+    y = point[..., 1]
+    denom = torch.sqrt(a * a + b * b)
+    # Prevent divide-by-zero
+    denom = torch.clamp(denom, min=1e-12)
+    signed = (a * x + b * y + c) / denom
+    return signed
 
 
 def interpolation_symm(data_in: torch.Tensor, shape: Tuple[int, int]) -> torch.Tensor:
@@ -92,132 +118,147 @@ def interpolation_symm(data_in: torch.Tensor, shape: Tuple[int, int]) -> torch.T
     data_out = slope_med * dis_cent_full
     return data_out
 
+# =========================
+# Sensor / grid generators
+# =========================
 
-def create_sensor_with_depth(config: Dict[str,
-                                          Any],
-                             start_idx: int,
-                             end_idx: int,
-                             x_dim: int,
-                             y_dim: int,
-                             focal_pos: float) -> torch.Tensor:
-    if torch.cuda.is_available:
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    if config["dtype"] == "float64":
-        datatype = torch.float64
-    elif config["dtype"] == "float32":
-        datatype = torch.float32
-    Img_pos = torch.zeros(
-        end_idx - start_idx,
-        x_dim,
-        3,
-        1,
-        dtype=datatype).to(device)
+def create_sensor_with_depth(
+    config: Dict[str, Any],
+    start_idx: int,
+    end_idx: int,
+    x_dim: int,
+    y_dim: int,
+    focal_pos: float
+) -> torch.Tensor:
+    """
+    Create a chunk of sensor positions with depth (meter units), shape (rows, x_dim, 3, 1).
+
+    y spans [start_idx:end_idx), x spans [0:x_dim).
+    Coordinates are derived from config center/width/dim with half-pixel offset.
+    """
+    device = get_device()
+    dtype = resolve_dtype(config.get("dtype"), default=torch.float32)
+
+    rows = end_idx - start_idx
+    Img_pos = torch.zeros((rows, x_dim, 3, 1), dtype=dtype, device=device)
+
     dx_left, dx_right, dy_top, dy_bot = get_borders(config)
-    half_pxl_size = config["width"] / config["dim"]
-    fx = torch.linspace(
-        dx_left +
-        half_pxl_size,
-        dx_right -
-        half_pxl_size,
-        x_dim,
-        dtype=datatype,
-        device=device)
-    fy = torch.linspace(
-        dy_top - half_pxl_size,
-        dy_bot + half_pxl_size,
-        y_dim,
-        dtype=datatype,
-        device=device)[
-        start_idx:end_idx]
-    # This is correct... Surprisingly
-    grid_y, grid_x = torch.meshgrid(fy, fx)
+    half_pxl = float(config["width"]) / float(config["dim"])
+
+    # x from left->right, y from top->bottom (consistent with your original)
+    fx = torch.linspace(dx_left + half_pxl, dx_right - half_pxl, x_dim, dtype=dtype, device=device)
+    fy_full = torch.linspace(dy_top - half_pxl, dy_bot + half_pxl, y_dim, dtype=dtype, device=device)
+    fy = fy_full[start_idx:end_idx]
+
+    # 'ij' indexing: first index is y (rows), second is x (cols)
+    grid_y, grid_x = torch.meshgrid(fy, fx, indexing="ij")
+
+    # Convert mm to m
     Img_pos[:, :, 0, 0] = grid_y * 1e-3
     Img_pos[:, :, 1, 0] = grid_x * 1e-3
-    Img_pos[:, :, 2, 0] = focal_pos * 1e-3
+    Img_pos[:, :, 2, 0] = float(focal_pos) * 1e-3
     return Img_pos
 
 
-def create_sensor_grids(config: Dict[str, Any], left_border: int, right_border: int,
-                        top_border: int, bot_border: int, dim: int) -> torch.Tensor:
-    if config["dtype"] == "float64":
-        datatype = torch.float64
-    elif config["dtype"] == "float32":
-        datatype = torch.float32
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    fx = torch.linspace(
-        left_border,
-        right_border,
-        dim,
-        dtype=datatype,
-        device=device)
-    fy = torch.linspace(
-        top_border,
-        bot_border,
-        dim,
-        dtype=datatype,
-        device=device)
-    sensor_pos = torch.zeros(
-        1, 2, dim, dim, dtype=datatype).to(device)
+def create_sensor_grids(
+    config: Dict[str, Any],
+    left_border: float,
+    right_border: float,
+    top_border: float,
+    bot_border: float,
+    dim: int
+) -> torch.Tensor:
+    """
+    Create a full-resolution 2D sensor grid (1,2,H,W) in the same units as borders (likely mm).
 
-    grid_y, grid_x = torch.meshgrid(fy, fx)  
-    sensor_pos[0, 0, :, :] = grid_y
-    sensor_pos[0, 1, :, :] = grid_x
+    Channel 0 = y, Channel 1 = x.
+    """
+    dtype = resolve_dtype(config.get("dtype"), default=torch.float32)
+    device = get_device()
+
+    fx = torch.linspace(left_border, right_border, dim, dtype=dtype, device=device)
+    fy = torch.linspace(top_border, bot_border, dim, dtype=dtype, device=device)
+
+    sensor_pos = torch.zeros((1, 2, dim, dim), dtype=dtype, device=device)
+    gy, gx = torch.meshgrid(fy, fx, indexing="ij")
+    sensor_pos[0, 0] = gy
+    sensor_pos[0, 1] = gx
     return sensor_pos
 
 
-def get_borders(config: Dict[str, Any]) -> Tuple[int, int, int, int]:
-    dx_left = config["center"][1] - config["width"]
-    dx_right = config["center"][1] + config["width"]
-    dy_top = config["center"][0] + config["width"]
-    dy_bot = config["center"][0] - config["width"]
+def get_borders(config: Dict[str, Any]) -> Tuple[float, float, float, float]:
+    """
+    Borders (in the same units as `center` and `width`, typically mm):
+      dx_left, dx_right, dy_top, dy_bot
+    """
+    cx, cy = float(config["center"][0]), float(config["center"][1])
+    w = float(config["width"])
+    dx_left = cy - w
+    dx_right = cy + w
+    dy_top = cx + w
+    dy_bot = cx - w
     return dx_left, dx_right, dy_top, dy_bot
 
 
-def compute_RMS(ps):
+# =========================
+# Misc utilities
+# =========================
+
+
+def compute_RMS(ps: torch.Tensor) -> torch.Tensor:
+    """
+    RMS of radial distances from the origin for a set of 2D points ps:(N,2).
+    Returns a scalar tensor (std of radii).
+    """
+    if ps.ndim != 2 or ps.size(1) != 2:
+        raise ValueError("ps must be (N,2)")
     rad = torch.norm(ps, dim=1)
-    r_std = torch.std(rad)
-    return r_std
+    return torch.std(rad)
 
 
 def load_config(path: str) -> Dict[str, Any]:
     """Load a JSON config file into a dictionary."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as f:
-        config = json.load(f)
-    return config
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {p}")
+    with p.open("r") as f:
+        return json.load(f)
 
 
 def build_folder(config: Dict[str, Any]) -> None:
-    subfolders = [
-        '/lens/',
-        '/layout/',
-        'layout_off',
-        '/meas/',
-        'meas_on',
-        'meas_on1',
-        'meas_off',
-        '/meas_full/',
-        '/recover_demosaic/',
-        '/recover_full/',
-        '/gt/',
-        '/psf/',
-        'pred_on',
-        'pred_on1',
-        'pred_off']
-    if not os.path.exists(config["display_folder"]):
-        os.mkdir(config["display_folder"])
-    if not os.path.exists(config["record_folder"]):
-        os.mkdir(config["record_folder"])
+    """
+    Create display and record folder trees.
+
+    Uses pathlib with mkdir(parents=True, exist_ok=True). Leading slashes are stripped from
+    subfolder names to avoid absolute paths.
+    """
+    display_root = Path(config["display_folder"])
+    record_root = Path(config["record_folder"])
+
+    # Original list cleaned: remove leading slashes and duplicates, keep structure intent.
+    subfolders: Sequence[str] = [
+        "lens",
+        "layout",
+        "layout_off",
+        "meas",
+        "meas_on",
+        "meas_on1",
+        "meas_off",
+        "meas_full",
+        "recover_demosaic",
+        "recover_full",
+        "gt",
+        "psf",
+        "pred_on",
+        "pred_on1",
+        "pred_off",
+    ]
+
+    display_root.mkdir(parents=True, exist_ok=True)
+    record_root.mkdir(parents=True, exist_ok=True)
+
     for sub in subfolders:
-        if not os.path.exists(config["record_folder"] + sub):
-            os.mkdir(config["record_folder"] + sub)
-        if not os.path.exists(config["display_folder"] + sub):
-            os.mkdir(config["display_folder"] + sub)
-    return
+        # Ensure relative
+        sub = sub.lstrip("/\\")
+        (display_root / sub).mkdir(parents=True, exist_ok=True)
+        (record_root / sub).mkdir(parents=True, exist_ok=True)
