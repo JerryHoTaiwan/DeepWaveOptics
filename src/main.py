@@ -1,114 +1,180 @@
-import os
-from param import param_map
+# main.py
+from __future__ import annotations
+
 import argparse
-import json
+import importlib
 import sys
-import time
+from pathlib import Path
+from typing import Any, Callable, Dict, List
+
 import torch
-from initialization import initialize_lens, initialize_materials, load_lens, plot_lens_with_ray
-from tracer import compute_efl
-from utils import build_folder
-from blocks import * # be aware of duplicate function names
-sys.path.append("../")
-from deeplens import GeoLens
-import diffoptics as do
-import warnings
-warnings.filterwarnings("ignore")
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--pipeline", type=str, help="The pipeline to run")
-args = parser.parse_args()
+# Local utils
+from utils import build_folder, load_config
+
+# Add project root (if needed) before third-party/local imports that live one level up
+sys.path.append("..")
+from deeplens import GeoLens  # noqa: E402
+import diffoptics as do        # noqa: E402
 
 
-def show_lens(lens: do.Lensgroup) -> None:
-    for i, s in enumerate(lens.surfaces):
-        print(f"Surface {i}: {s}")
+# ---------- Utilities ----------
+
+def get_device() -> torch.device:
+    return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
-if __name__ == "__main__":
-
-    filepath = os.path.join(
-        "/home/ubuntu/DiffWaveOptics/pipeline", param_map[args.pipeline])
-    config = json.load(open(filepath))
-    build_folder(config)  # Create folders for saving results
-
-    # Check if CUDA is available
+def set_seed(seed: int) -> None:
+    torch.manual_seed(seed)
+    # cuda seed only if cuda is available
     if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+        torch.cuda.manual_seed(seed)
+    # (Optional) make runs more reproducible (may slow things down)
+    # torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+def set_torch_runtime() -> None:
     torch.autograd.set_detect_anomaly(True)
-    torch.random.manual_seed(config["seed"])
-    torch.cuda.random.manual_seed(config["seed"])
-    torch.set_printoptions(10)
-    if config["dtype"] == "float64":
-        datatype = torch.float64
-    elif config["dtype"] == "float32":
-        datatype = torch.float32
+    torch.set_printoptions(precision=10)
 
-    # Define a lens system
-    start = time.perf_counter()
+
+# ---------- Lens construction ----------
+
+def build_lens(config: Dict[str, Any], device: torch.device):
+    """
+    Build either a DeepLens GeoLens or a DiffOptics Lensgroup based on config.
+    Returns (lens, extras) where 'extras' may include derived parameters used later.
+    """
+    # Common-derived parameters for DiffOptics branch
+    extras: Dict[str, Any] = {}
+
+    if config.get("use_deeplens", False):
+        print("Using DeepLens lens model.")
+        lens = GeoLens(filename=config["lens_name"])
+        return lens, extras
+
+    print("Using DiffOptics lens model.")
     lens = do.Lensgroup(device=device)
-    d_list = [4.96, 2.68, 1.31, 2.73, 3.4]
-    system_scale = config["system_scale"]
-    if config["single_lens"]:
-        # lens.d_sensor = torch.tensor([system_scale * (14.96)], device=device) # for shorter
-        lens.d_sensor = torch.tensor([system_scale * (56.43)], device=device) # for longer
-    else:
-        lens.d_sensor = torch.tensor(
-            system_scale * (41.58 - 0.23 + sum(d_list)), device=device)
 
-    if config["load_surface"]:
-        tmp_d = lens.d_sensor
-        del lens
+    if config.get("load_surface", False):
+        print("Loading lens from file:", config["lens_name"])
+        from initialization import load_lens  # local import to avoid circulars
         lens = load_lens(config["lens_name"])
+        # Make sure d_sensor is a plain tensor, not a leaf with grad history
         if torch.is_tensor(lens.d_sensor):
             lens.d_sensor = lens.d_sensor.detach()
-    elif config["load_surface_from_txt"]:
+
+    elif config.get("load_surface_from_txt", False):
+        print("Loading lens surfaces from txt:", config["lens_txt"])
         lens.load_file(config["lens_txt"])
-        surfaces = lens.surfaces
-        materials = lens.materials
+        # If you need to keep these around:
+        extras["surfaces"] = lens.surfaces
+        extras["materials"] = lens.materials
+
     else:
+        print("Using given lens parameters as initialization.")
+        from initialization import initialize_lens, initialize_materials  # avoid top-level import
+
+        d_list = [4.96, 2.68, 1.31, 2.73, 3.4]
+        system_scale = config["system_scale"]
+
+        if config.get("single_lens", False):
+            # “longer” comment retained from your code
+            lens.d_sensor = torch.tensor([system_scale * 56.43], device=device)
+        else:
+            lens.d_sensor = torch.tensor(system_scale * (41.58 - 0.23 + sum(d_list)), device=device)
+
         surfaces = initialize_lens(config, d_list, device)
         materials = initialize_materials(config)
         lens.load(surfaces, materials)
+        extras["surfaces"] = surfaces
+        extras["materials"] = materials
 
-    wavelength = torch.Tensor([config["disp_wv"]]).to(device)  # unit: nm
-    pxl_size = 2 * config["width"] / config["dim"]
-    half_pxl_size = config["width"] / config["dim"]
-    psf_rad_grid = config["psf_rad"] // pxl_size
-    dim_new = int(config["dim"] + 2 * psf_rad_grid)
-    lens.pixel_size = (
-        2 * config["width"] + 2 * config["psf_rad"] - 2 * half_pxl_size) / (dim_new - 1)
+    # ---- Rendering parameters (DiffOptics branch only) ----
+    wavelength_nm = torch.tensor([config["disp_wv"]], device=device, dtype=torch.float32)  # nm
+    width = float(config["width"])
+    dim = int(config["dim"])
+    psf_rad = float(config["psf_rad"])
+
+    pxl_size = 2 * width / dim
+    half_pxl = width / dim
+    psf_rad_grid = psf_rad // pxl_size
+    dim_new = int(dim + 2 * psf_rad_grid)
+
+    # Fill into the lens object
+    lens.pixel_size = (2 * width + 2 * psf_rad - 2 * half_pxl) / (dim_new - 1)
     lens.film_size = [dim_new * 1.4, dim_new * 1.4]
 
-    # Compute the focal length as a reference
-    if config["single_lens"]:
-        materials = lens.materials
-        ri = materials[1].ior(wavelength)
-        est_f = 1 / ((ri - 1) * (-lens.surfaces[1].c - -lens.surfaces[0].c + (
-            (ri - 1) * lens.surfaces[1].d * -lens.surfaces[1].c * -lens.surfaces[0].c) / (ri)))
-        print('===\nestimated focal length: ', est_f)
-        print('curvature', lens.surfaces[0].c, lens.surfaces[1].c, '\n===')
+    # Save extras you might need downstream
+    extras.update(
+        dict(
+            wavelength_nm=wavelength_nm,
+            pxl_size=pxl_size,
+            half_pxl=half_pxl,
+            psf_rad_grid=psf_rad_grid,
+            dim_new=dim_new,
+        )
+    )
+    return lens, extras
 
-    if config["use_deeplens"]:
-        lens = GeoLens(filename=config["lens_name"])
-        # lens.analysis(render=False)
 
-    if config["is_lens"] and not config["use_deeplens"] and False:
-        ax, fig = lens.plot_setup2D()
-        fig.savefig("./layout_shape.png", bbox_inches='tight')
-        plt.close()
-        plot_lens_with_ray(lens, config, wavelength.item())
-        compute_efl(lens, config, wavelength)
+# ---------- Block execution ----------
 
-    # Copy the json file to the display folder
-    os.system(f"cp {filepath} {config['display_folder']}")
-    os.system(f"cp {filepath} {config['record_folder']}")
+def load_block_registry(module_name: str = "functions") -> Dict[str, Callable[[Dict[str, Any], Any], None]]:
+    """
+    Build a registry of callable blocks from a module (e.g., your `functions.py`).
+    Only public callables (not starting with '_') are registered.
+    """
+    mod = importlib.import_module(module_name)
+    registry: Dict[str, Callable] = {}
+    for name in dir(mod):
+        if name.startswith("_"):
+            continue
+        fn = getattr(mod, name)
+        if callable(fn):
+            registry[name] = fn
+    return registry
 
-    # Run blocks
-    for block in config["blocks"]:
-        print("Block: ", block)
-        function = globals()[block]
-        function(config, lens)
 
+def run_blocks(block_names: List[str], registry: Dict[str, Callable], config: Dict[str, Any], lens: Any) -> None:
+    for block in block_names:
+        if block not in registry:
+            raise KeyError(
+                f"Block '{block}' not found in registry. "
+                f"Available: {', '.join(sorted(registry.keys()))}"
+            )
+        print(f"[Block] {block}")
+        registry[block](config, lens)
+
+
+# ---------- Entry point ----------
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True, help="Path to config JSON file")
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    build_folder(config)  # create output folders early
+
+    device = get_device()
+    print(f"Using device: {device}")
+
+    set_torch_runtime()
+    set_seed(int(config["seed"]))
+
+    lens, _extras = build_lens(config, device)
+
+    # Blocks to run (ordered)
+    blocks = list(config.get("blocks", []))
+    if not blocks:
+        print("No blocks specified in config['blocks']; nothing to do.")
+        return
+
+    # Build the block registry once
+    registry = load_block_registry("functions")
+    run_blocks(blocks, registry, config, lens)
+
+
+if __name__ == "__main__":
+    main()
