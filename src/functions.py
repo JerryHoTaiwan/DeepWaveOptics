@@ -18,6 +18,8 @@ from torch.utils.data import DataLoader
 import GPUtil
 import lpips
 
+from render import render_psf
+
 sys.path.append("../")
 import diffoptics as do
 
