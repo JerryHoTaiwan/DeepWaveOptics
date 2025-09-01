@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Tuple, Optional, Sequence
 import os
+import pickle
 import torch
 
 
@@ -335,3 +336,21 @@ def build_folder(config: Dict[str, Any]) -> None:
         sub = sub.lstrip("/\\")
         (display_root / sub).mkdir(parents=True, exist_ok=True)
         (record_root / sub).mkdir(parents=True, exist_ok=True)
+        
+        
+def get_data_list(config: Dict[str, Any]) -> Tuple[str, str]:
+    train_list_all, valid_list_all = [], []
+    for img_id in range(1, config["train_num"]+1):
+        img_id_str = str(img_id).zfill(4)
+        if os.path.isfile("/mnt2/DIV2K_train_HR/{}.png".format(img_id_str)):
+            train_list_all.append("/mnt2/DIV2K_train_HR/{}.png".format(img_id_str))
+    for img_id in range(801, 801+config["valid_num"]):
+        img_id_str = str(img_id).zfill(4)
+        if os.path.isfile("/mnt2/DIV2K_valid_HR/{}.png".format(img_id_str)):
+            valid_list_all.append("/mnt2/DIV2K_valid_HR/{}.png".format(img_id_str))
+    return train_list_all, valid_list_all
+
+
+def save_lens(surf, filename: str='surf.pkl') -> None:
+    with open(filename, 'wb') as pickle_file:
+        pickle.dump(surf, pickle_file)

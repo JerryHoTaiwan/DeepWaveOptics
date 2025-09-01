@@ -300,7 +300,9 @@ def compute_opl_prl(
     a = torch.tan(phi + torch.pi / 2)
     baseline = torch.tensor([a, -1.0, oss[0, 0, 0] - a * oss[0, 0, 1]], dtype=dtype, device=device)
     sign = -torch.sign(phi + 1e-8)
-    if (torch.abs(torch.abs(torch.tensor(rot)) - 180) < 1e-2) and (torch.sign(torch.tensor(rot)) == -1):
+    rot_t = rot if isinstance(rot, torch.Tensor) else torch.tensor(rot, dtype=dtype, device=device)
+
+    if (torch.abs(torch.abs(rot_t) - 180) < 1e-2) and (torch.sign(rot_t) == -1):
         sign *= -1
     first_dist = point2line_distance(oss[:, 0, :], baseline) * torch.sin(angle) * sign
     opl += first_dist * r_idx_air
