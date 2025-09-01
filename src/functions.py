@@ -1,21 +1,13 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
+from pathlib import Path
 import sys
-import json
-import os
 import numpy as np
-import scipy
 import matplotlib.pyplot as plt
 import cv2
-from tqdm import tqdm
 import time
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
-import GPUtil
 import lpips
 
 from render import render_psf, psf2meas
@@ -37,48 +29,97 @@ def show_psf(config: Dict[str, Any], lens: do.Lensgroup) -> None:
     print(h_stack.shape)
     
     
-def display(config: Dict[str, Any], lens: do.Lensgroup) -> None:
-    # Display PSFs
-    fn_list = config["filelist"]
-    meas_stack = np.zeros((config["dim"] + 1, config["dim"] + 1, 3))
-    full_stack = np.zeros((config["dim"], config["dim"], 3))
-    gt_stack = np.zeros((config["dim"] + 1, config["dim"] + 1, 3))
-    # print(lens.d_sensor)
-    # save_lens(lens, "/home/ubuntu/DiffWaveOptics/lens/singlet_f56.pkl")
-    for i, wv in enumerate([440, 510, 650]):
-        torch.cuda.synchronize()
+def display(config: Dict[str, Any], lens: Any) -> None:
+    """
+    Render PSFs and synthesize measurements for a set of wavelengths,
+    then save summed stacks (meas/full/gt) to disk.
+
+    Notes:
+        - Uses the first image in the batch ([..., 0]) like your original code.
+        - Sums across wavelengths; you can divide by len(wavelengths) to average if desired.
+        - Saves PNGs with values clipped to [0, 255].
+    """
+    dim: int = int(config["dim"])
+    out_dir = Path(config["display_folder"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Wavelengths: use config override if provided
+    wavelengths: List[int] = config.get("render_wavelengths", [440, 510, 650])
+
+    # Input file list (pass-through to psf2meas)
+    fn_list = config.get("filelist", ["none.png"])
+
+    # Allocate accumulators (float32)
+    meas_stack = np.zeros((dim + 1, dim + 1, 3), dtype=np.float32)
+    full_stack = np.zeros((dim, dim, 3), dtype=np.float32)
+    gt_stack   = np.zeros((dim + 1, dim + 1, 3), dtype=np.float32)
+
+    for ch_idx, wv in enumerate(wavelengths):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         tic = time.perf_counter()
+
+        # 1) Render PSFs
         proj, chief_pos, h_stack, rms_i = render_psf(
-            config, lens, wv, plot=False, use_wave=True)
+            config=config,
+            lens=lens,
+            wavelength=float(wv),
+            plot=False,
+            use_wave=True,
+        )
         print("==== Finish rendering PSFs ====")
+
+        # 2) Convolve to measurements
         meas, full, gt = psf2meas(
-            config, proj, chief_pos, h_stack, wv, i, fn_list)
+            config=config,
+            proj=proj,
+            chief_pos=chief_pos,
+            h_stack=h_stack,
+            wavelength=float(wv),
+            channel_idx=ch_idx,   # keep original mapping: channel index per wavelength
+            filename=fn_list,
+        )
         print("==== Finish rendering measurement ====")
-        torch.cuda.synchronize()
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         toc = time.perf_counter()
-        print("Time: ", toc - tic)
-        meas_stack += meas.detach().cpu().numpy()[..., 0]
-        full_stack += full.detach().cpu().numpy()[..., 0]
-        gt_stack += gt.cpu().numpy()[..., 0]
-    np.save(config["display_folder"] + "/full_stack.npy", full_stack)
+        print(f"Time for {wv} nm: {toc - tic:.3f} s")
+
+        # Accumulate (use first item in batch dimension to match original behavior)
+        meas_np = meas[..., 0].detach().to("cpu", non_blocking=True).numpy()
+        full_np = full[..., 0].detach().to("cpu", non_blocking=True).numpy()
+        gt_np   = gt  [..., 0].detach().to("cpu", non_blocking=True).numpy()
+
+        meas_stack += meas_np
+        full_stack += full_np
+        gt_stack   += gt_np
+
+    # Optional: average instead of sum
+    # denom = float(len(wavelengths))
+    # meas_stack /= denom; full_stack /= denom; gt_stack /= denom
+
+    # Save outputs
+    np.save(str(out_dir / "full_stack.npy"), full_stack)
+
+    # Clip to [0,1] before saving as PNG
+    meas_png = np.clip(meas_stack, 0.0, 1.0)
+    full_png = np.clip(full_stack, 0.0, 1.0)
+    gt_png   = np.clip(gt_stack,   0.0, 1.0)
+
+    # Note: cv2.imwrite expects BGR; we preserve your original behavior (no channel swap).
     cv2.imwrite(
-        config["display_folder"] +
-        "rgb_meas_{}.png".format(
-            config["physic"]),
-        255 *
-        meas_stack)
+        str(out_dir / f"rgb_meas_{config['physic']}.png"),
+        (meas_png * 255.0).astype(np.uint8),
+    )
     cv2.imwrite(
-        config["display_folder"] +
-        "rgb_full_{}.png".format(
-            config["physic"]),
-        255 *
-        full_stack)
+        str(out_dir / f"rgb_full_{config['physic']}.png"),
+        (full_png * 255.0).astype(np.uint8),
+    )
     cv2.imwrite(
-        config["display_folder"] +
-        "rgb_gt_{}.png".format(
-            config["physic"]),
-        255 *
-        gt_stack)
+        str(out_dir / f"rgb_gt_{config['physic']}.png"),
+        (gt_png * 255.0).astype(np.uint8),
+    )
     
     
 def e2e_recon(config: Dict[str, Any], lens: do.Lensgroup) -> None:
