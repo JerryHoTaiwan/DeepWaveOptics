@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import torch
+import matplotlib.pyplot as plt
 
 # Local utils
 from utils import build_folder, load_config
@@ -145,6 +146,31 @@ def run_blocks(block_names: List[str], registry: Dict[str, Callable], config: Di
             )
         print(f"[Block] {block}")
         registry[block](config, lens)
+        
+        
+
+def visualize_lens(config: Dict[str, Any], lens: do.Lensgroup) -> None:
+    """
+    Visualize and save the 2D lens setup.
+
+    Parameters
+    ----------
+    config : Dict[str, Any]
+        Configuration dictionary. Must include "display_folder".
+        Optional key "use_deeplens" (bool) determines how plotting is handled.
+    lens : do.Lensgroup
+        Lens group object to visualize.
+    """
+    if config.get("use_deeplens", False):
+        ax, fig = lens.plot_setup2D()
+    else:
+        ax, fig = lens.plot_setup2D(show=False)
+
+    save_path = Path(config["display_folder"]) / "lens_setup.png"
+    plt.savefig(save_path, dpi=300)
+    plt.close(fig)
+
+    print(f"Saved lens setup visualization to {save_path}")
 
 
 # ---------- Entry point ----------
@@ -164,6 +190,7 @@ def main() -> None:
     set_seed(int(config["seed"]))
 
     lens, _extras = build_lens(config, device)
+    visualize_lens(config, lens)
 
     # Blocks to run (ordered)
     blocks = list(config.get("blocks", []))
