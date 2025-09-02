@@ -55,31 +55,6 @@ pip install -r requirements.txt
 
 ---
 
-## Usage
-
-### Run with a Config File
-All experiments are controlled via JSON configs:
-```bash
-python main.py --config configs/experiments/example.json
-```
-
-### Example Config (`configs/experiments/example.json`)
-```json
-{
-  "seed": 42,
-  "use_deeplens": false,
-  "lens_name": "example_lens.json",
-  "system_scale": 1.0,
-  "disp_wv": 550,
-  "width": 10.0,
-  "dim": 256,
-  "psf_rad": 32,
-  "blocks": ["generate_psf", "render_image", "optimize"]
-}
-```
-
----
-
 ## Project Structure
 
 ```
@@ -97,6 +72,12 @@ DeepWaveOptics/
 ---
 
 ## Examples
+
+### Run with a Config File
+All experiments are controlled via JSON configs:
+```bash
+python main.py --config configs/experiments/show_psfs.json
+```
 
 - **Generate PSFs**
 ```bash
