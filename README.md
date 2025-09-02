@@ -1,5 +1,17 @@
 # A Differentiable Wave Optics Model for End-to-End Computational Imaging System Optimization
 
+[![Project Website](https://img.shields.io/badge/Website-Live-blue)](https://jerryhotaiwan.github.io/diff_wave_optics/)
+
+📢 **This work has been accepted to ICCV 2025.**
+
+---
+
+<p align="center">
+  <img src="docs/figures/teaser.png" alt="Teaser Figure" width="80%"/>
+</p>
+
+---
+
 This repository provides a differentiable wave optics simulator for **point spread function (PSF) generation**, **image formation**, and **end-to-end optimization** of computational imaging systems.  
 It is designed for research in computational imaging, holography, and optics-aware machine learning.
 
@@ -74,12 +86,10 @@ python main.py --config configs/experiments/example.json
 DeepWaveOptics/
 ├── configs/          # JSON configs (default/experiments/env)
 ├── src/              # Core implementation
-│   ├── tracer.py     # Ray & wave optics tracing
-│   ├── render.py     # PSF and image rendering
-│   ├── recon.py      # End-to-end optimization loop
+│   ├── functions.py  # Callable blocks (PSF, render, optimize, etc.)
 │   ├── utils.py      # Config + folder utilities
-│   ├── plotter.py    # Visualization helpers
-│   └── main.py       # Entry point
+│   ├── main.py       # Entry point
+│   └── initialization.py
 ├── results/          # Outputs (PSFs, images, logs, checkpoints)
 └── README.md
 ```
@@ -105,18 +115,9 @@ python main.py --config configs/train_cellphonelens.json
 
 ---
 
-## Figures (Placeholders)
-
-<p align="center">
-  <img src="docs/figures/psf_example.png" alt="PSF Example" width="350"/>
-  <img src="docs/figures/reconstruction.png" alt="Reconstruction Example" width="350"/>
-</p>
-
----
-
 ## Citation
 
-If you use this code in your work, please cite (placeholder):
+If you use this code in your work, please cite:
 
 ```
 @article{ho2024differentiable,
@@ -127,27 +128,24 @@ If you use this code in your work, please cite (placeholder):
 }
 ```
 
-If you use or extend **DeepLens/DiffOptics**, please cite:
-
-```
-@article{yang2024end,
-  title={End-to-End Hybrid Refractive-Diffractive Lens Design with Differentiable Ray-Wave Model},
-  author={Yang, Xinge and Souza, Matheus and Wang, Kunyi and Chakravarthula, Praneeth and Fu, Qiang and Heidrich, Wolfgang},
-  journal={arXiv preprint arXiv:2406.00834},
-  year={2024}
-}
-```
-
 ---
 
 ## License
 
-TBD — choose an appropriate open-source license (e.g., MIT, BSD, Apache 2.0).
+MIT License © 2025 Chi-Jui (Jerry) Ho and contributors
 
 ---
 
 ## Acknowledgments
 
 - UC San Diego Computational Imaging Lab  
-- Contributors to DiffOptics and [DeepLens](https://github.com/singer-yang/DeepLens) frameworks  
+- [DeepLens](https://github.com/singer-yang/DeepLens) and [DiffOptics](https://github.com/singer-yang/DeepLens) by Xinge Yang *et al.*  
+  ```
+  @article{yang2024end,
+    title={End-to-End Hybrid Refractive-Diffractive Lens Design with Differentiable Ray-Wave Model},
+    author={Yang, Xinge and Souza, Matheus and Wang, Kunyi and Chakravarthula, Praneeth and Fu, Qiang and Heidrich, Wolfgang},
+    journal={arXiv preprint arXiv:2406.00834},
+    year={2024}
+  }
+  ```
 - Community feedback  
