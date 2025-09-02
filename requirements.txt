@@ -1,0 +1,14 @@
+# DeepWaveOptics — pinned to your current setup (Python 3.8.10)
+
+# Core stack
+torch==2.0.1+cu118           # matches your installed CUDA 11.8 build
+numpy==1.24.3
+matplotlib==3.7.1
+opencv-python==4.7.0
+
+# Perceptual loss
+lpips==0.1.4
+
+# Project-local modules (edit paths if different)
+-e ./deeplens
+-e ./diffoptics

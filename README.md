@@ -41,8 +41,6 @@ source .venv/bin/activate   # Linux/Mac
 pip install -r requirements.txt
 ```
 
-> ⚠️ `requirements.txt` is a placeholder – update with the actual packages you need.
-
 ---
 
 ## Usage
@@ -76,10 +74,12 @@ python main.py --config configs/experiments/example.json
 DeepWaveOptics/
 ├── configs/          # JSON configs (default/experiments/env)
 ├── src/              # Core implementation
-│   ├── functions.py  # Callable blocks (PSF, render, optimize, etc.)
+│   ├── tracer.py     # Ray & wave optics tracing
+│   ├── render.py     # PSF and image rendering
+│   ├── recon.py      # End-to-end optimization loop
 │   ├── utils.py      # Config + folder utilities
-│   └── initialization.py
-├── main.py           # Entry point
+│   ├── plotter.py    # Visualization helpers
+│   └── main.py       # Entry point
 ├── results/          # Outputs (PSFs, images, logs, checkpoints)
 └── README.md
 ```
@@ -90,18 +90,27 @@ DeepWaveOptics/
 
 - **Generate PSFs**
 ```bash
-python main.py --config configs/experiments/psf_generation.json
+python main.py --config configs/show_psfs.json
 ```
 
 - **Render Images**
 ```bash
-python main.py --config configs/experiments/render.json
+python main.py --config configs/display_triplet.json
 ```
 
 - **End-to-End Optimization**
 ```bash
-python main.py --config configs/experiments/optimize.json
+python main.py --config configs/train_cellphonelens.json
 ```
+
+---
+
+## Figures (Placeholders)
+
+<p align="center">
+  <img src="docs/figures/psf_example.png" alt="PSF Example" width="350"/>
+  <img src="docs/figures/reconstruction.png" alt="Reconstruction Example" width="350"/>
+</p>
 
 ---
 
@@ -118,6 +127,17 @@ If you use this code in your work, please cite (placeholder):
 }
 ```
 
+If you use or extend **DeepLens/DiffOptics**, please cite:
+
+```
+@article{yang2024end,
+  title={End-to-End Hybrid Refractive-Diffractive Lens Design with Differentiable Ray-Wave Model},
+  author={Yang, Xinge and Souza, Matheus and Wang, Kunyi and Chakravarthula, Praneeth and Fu, Qiang and Heidrich, Wolfgang},
+  journal={arXiv preprint arXiv:2406.00834},
+  year={2024}
+}
+```
+
 ---
 
 ## License
@@ -129,5 +149,5 @@ TBD — choose an appropriate open-source license (e.g., MIT, BSD, Apache 2.0).
 ## Acknowledgments
 
 - UC San Diego Computational Imaging Lab  
-- Contributors to DiffOptics and DeepLens frameworks  
+- Contributors to DiffOptics and [DeepLens](https://github.com/singer-yang/DeepLens) frameworks  
 - Community feedback  
