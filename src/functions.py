@@ -1,6 +1,7 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 from pathlib import Path
 import sys
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
@@ -12,7 +13,7 @@ import lpips
 
 from render import render_psf, psf2meas
 from unet_model import UNet
-from utils import get_data_list, save_lens
+from utils import get_data_list, save_lens, get_device, resolve_dtype
 from plotter import plot_loss_curve
 from e2e import train_recon, valid_recon
 
@@ -122,178 +123,251 @@ def display(config: Dict[str, Any], lens: Any) -> None:
     )
     
     
-def e2e_recon(config: Dict[str, Any], lens: do.Lensgroup) -> None:
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    if config["dtype"] == "float64":
-        datatype = torch.float64
-    elif config["dtype"] == "float32":
-        datatype = torch.float32
-    mse_weight = config["mse_weight"]
-    perc_weight = config["perc_weight"]
-    batch_size = config["batch_size"]
-    batch_num = int(160 // batch_size)
-    valid_batch_num = int(config["valid_num"] // batch_size)
-    wv_sample = torch.tensor(
-        config["wv_sample"],
-        dtype=datatype,
-        device=device)
+def e2e_recon(config: Dict[str, Any], lens: Any) -> None:
+    """
+    End-to-end reconstruction & lens co-optimization loop.
 
-    # Initialize the optimizer
+    Expects in `config` (non-exhaustive):
+      - training/validation: "train_num", "valid_num", "batch_size", "max_ep", "earlystop"
+      - losses/weights: "mse_weight", "perc_weight", "lr"
+      - wavelengths: "wv_sample" (list of nm, optional)
+      - network: "ft_net" (bool), "net_name" (optional path)
+      - dtype: "float32" or "float64"
+      - record_folder: output directory
+      - use_deeplens: bool (affects lens param handling)
+    """
+    device = get_device()
+    dtype = resolve_dtype(config.get("dtype"))
+
+    # Required config with sensible fallbacks / checks
+    train_num: int = int(config.get("train_num", 0))
+    valid_num: int = int(config.get("valid_num", 0))
+    batch_size: int = max(1, int(config.get("batch_size", 4)))
+    max_ep: int = int(config.get("max_ep", 1))
+    earlystop: int = int(config.get("earlystop", max_ep))
+    mse_weight: float = float(config.get("mse_weight", 1.0))
+    perc_weight: float = float(config.get("perc_weight", 1.0))
+    base_lr: float = float(config.get("lr", 1e-5))
+
+    # Batches (ceil to cover leftovers)
+    train_batches = math.ceil(max(0, train_num) / batch_size) if train_num else 0
+    valid_batches = math.ceil(max(0, valid_num) / batch_size) if valid_num else 0
+
+    # Wavelengths
+    wv_list: List[float] = config.get("wv_sample", [440.0, 510.0, 650.0])
+    wv_sample = torch.as_tensor(wv_list, dtype=dtype, device=device)
+
+    # -----------------------
+    # Initialize the network
+    # -----------------------
     net = UNet(n_channels=3, n_classes=3, do_checkpoint=False).to(device)
-    if config["ft_net"]:
-        net.load_state_dict(torch.load(config["net_name"]))
+    if bool(config.get("ft_net", False)):
+        # Finetune from provided checkpoint
+        ckpt = config.get("net_name", "")
+        if not ckpt:
+            raise ValueError("ft_net=True but 'net_name' is not provided in config.")
+        net.load_state_dict(torch.load(ckpt, map_location=device))
     else:
-        net.load_state_dict(torch.load("/home/ubuntu/DiffWaveOptics/saved_networks/recon_pretrained_dict.pth"))
+        # Default: load your pretrained dictionary
+        net.load_state_dict(torch.load(
+            "/home/ubuntu/DiffWaveOptics/saved_networks/recon_pretrained_dict.pth",
+            map_location=device
+        ))
     net.train()
-    param_list = [{'params': net.parameters(), 'lr': 1e-4}]
-    if config["use_deeplens"]:
-        param_lens = lens.get_optimizer_params()
-        param_list += param_lens
+
+    # -----------------------
+    # Build optimizer params
+    # -----------------------
+    param_list: List[Dict[str, Any]] = [{'params': net.parameters(), 'lr': 1e-4}]
+    if bool(config.get("use_deeplens", False)):
+        # Let the lens object expose its own parameter groups
+        param_list += lens.get_optimizer_params()
     else:
-        if not config["ft_net"]:
-            for i in range(len(lens.surfaces)):
-                # check if surface[i] has c
-                if hasattr(lens.surfaces[i], 'c'):
-                    c_clone = torch.clone(lens.surfaces[i].c).detach()
-                    c_var_i = c_clone.to(datatype).to(device).requires_grad_()
-                    lens.surfaces[i].c = c_var_i
-                    param_list.append({'params': c_var_i, 'lr': config["lr"]})
+        # DiffOptics: expose surface curvature 'c' where available (if not ft_net)
+        if not bool(config.get("ft_net", False)):
+            for i, surf in enumerate(getattr(lens, "surfaces", [])):
+                if hasattr(surf, "c"):
+                    c_var = surf.c.detach().to(dtype=dtype, device=device).requires_grad_()
+                    surf.c = c_var
+                    param_list.append({'params': [c_var], 'lr': base_lr})
                 else:
-                    print("Surface {} has no curvature".format(i))
+                    print(f"[warn] Surface {i} has no curvature attribute 'c'")
+
     opt = optim.Adam(param_list, lr=1e-5)
-    loss_fn_alex = lpips.LPIPS(net="alex").to(datatype).to(device)
+
+    # Perceptual loss
+    loss_fn_alex = lpips.LPIPS(net="alex").to(device)
+    # lpips expects float32 inputs; keep model & loss on device (not dtype casted)
+
+    # -----------------------
+    # Data lists
+    # -----------------------
     train_list_all, valid_list_all = get_data_list(config)
-    loss_list = torch.zeros(config["max_ep"])
-    dataloss_list = torch.zeros(config["max_ep"])
-    rmsloss_list = torch.zeros(config["max_ep"])
+
+    # Tracking
+    loss_list = torch.zeros(max_ep, dtype=torch.float32)
+    dataloss_list = torch.zeros(max_ep, dtype=torch.float32)
+    rmsloss_list = torch.zeros(max_ep, dtype=torch.float32)
     patience = 0
-    min_loss = 1e8
-    best_ep = 0
+    min_loss = float("inf")
+    best_ep = -1
 
-    for ep in range(config["max_ep"]):
-        loss = 0.
-        print("===\nEpoch: {}, Patience: {}".format(ep, patience))
-        proj_list, h_list = [], []
-        total_loss = 0.
-        total_percloss = 0.
-        total_mseloss = 0.
-        total_rmsloss = 0.
+    # =======================
+    # Training / Validation
+    # =======================
+    for ep in range(max_ep):
+        ep_tic = time.perf_counter()
+        print(f"\n=== Epoch {ep}/{max_ep-1} | Patience {patience}/{earlystop} ===")
 
-        for batch_id in range(batch_num):
-            for i in range(len(lens.surfaces)):
-                if hasattr(lens.surfaces[i], 'c'):
-                    print("surface", i, lens.surfaces[i].c.item(),)
-            print("Batch id: ", batch_id, batch_num)
+        # -----------------------
+        # Train
+        # -----------------------
+        net.train()
+        total_loss = 0.0
+        total_mseloss = 0.0
+        total_percloss = 0.0
+        total_rmsloss = 0.0
+
+        for batch_id in range(train_batches):
+            print(f"[train batch {batch_id}/{train_batches-1}]")
             start_img_id = batch_id * batch_size
-            end_img_id = min((batch_id + 1) * batch_size, config["train_num"])
+            end_img_id = min((batch_id + 1) * batch_size, train_num)
             fn_list = train_list_all[start_img_id:end_img_id]
-            loss, loss_m, loss_p, rms = train_recon(config, lens, net, opt, fn_list)
-            total_loss += loss.item()
-            total_mseloss += loss_m.item()
-            total_percloss += 1e3 * loss_p.item()
-            total_rmsloss += rms.item()
-        print(
-            "Total Loss: ",
-            total_loss /
-            (batch_num),
-            "data loss",
-            total_percloss /
-            (batch_num),
-            total_mseloss /
-            (batch_num),
-            "RMS: ",
-            total_rmsloss /
-            (batch_num))
 
+            # (Optional) print current curvatures
+            for i, surf in enumerate(getattr(lens, "surfaces", [])):
+                if hasattr(surf, "c") and torch.is_tensor(surf.c):
+                    print(f"surface {i} c = {float(surf.c.detach())}")
+
+            loss, loss_m, loss_p, rms = train_recon(config, lens, net, opt, fn_list)
+            total_loss += float(loss.item())
+            total_mseloss += float(loss_m.item())
+            total_percloss += float(loss_p.item()) * 1e3  # keep your scale display
+            total_rmsloss += float(rms.item())
+
+            torch.cuda.empty_cache()
+
+        denom = max(1, train_batches)  # avoid divide by zero
+        print(
+            f"[train] loss={total_loss/denom:.6f} | perc(x1e3)={total_percloss/denom:.6f} | "
+            f"mse={total_mseloss/denom:.6f} | RMS={total_rmsloss/denom:.6f}"
+        )
+
+        # -----------------------
+        # Validation
+        # -----------------------
         with torch.no_grad():
             net.eval()
-            total_loss = 0.
-            total_percloss = 0.
-            total_mseloss = 0.
-            rms = 0.
-            proj_list = []
-            chief_pos_list = []
-            h_list = []
-            for i, wv in enumerate(wv_sample):
-                proj, chief_pos, h_stack, rms_i = render_psf(
-                    config, lens, wv, plot=False)
-                rms += rms_i
+
+            # Precompute PSFs for each wavelength on current lens
+            proj_list: List[torch.Tensor] = []
+            chief_pos_list: List[torch.Tensor] = []
+            h_list: List[torch.Tensor] = []
+            rms_total = 0.0
+
+            for wv in wv_sample:
+                proj, chief_pos, h_stack, rms_i = render_psf(config, lens, float(wv), plot=False)
+                rms_total += float(rms_i)
                 proj_list.append(proj)
                 chief_pos_list.append(chief_pos)
                 h_list.append(h_stack)
 
-            for batch_id in range(valid_batch_num):
-                print("==\nBatch id: ", batch_id, valid_batch_num)
-                start_img_id = batch_id * batch_size
-                end_img_id = min(
-                    (batch_id + 1) * batch_size,
-                    config["valid_num"])
-                fn_list = valid_list_all[start_img_id:end_img_id]
-                ep_id = ep * 1000 + batch_id
-                plot = (batch_id == valid_batch_num - 1)
-                loss_m, loss_p = valid_recon(config, lens, net, fn_list, proj_list, chief_pos_list, h_list, ep_id, loss_fn_alex, plot)
-                loss = loss_m + loss_p / config["batch_size"]
-                print(
-                    "batch loss",
-                    loss.item(),
-                    loss_m.item(),
-                    loss_p.item() /
-                    config["batch_size"],
-                    rms)
-                torch.cuda.empty_cache()
-                total_loss += loss.item()
-                total_mseloss += loss_m.item()
-                total_percloss += loss_p.item()
+            v_total = 0.0
+            v_mse = 0.0
+            v_perc = 0.0
 
-            print("Validation Loss: ",
-                  total_loss / (valid_batch_num),
-                  "mse: ",
-                  255 * np.sqrt(total_mseloss /
-                                (mse_weight * valid_batch_num + 1e-8)),
-                  "perc loss",
-                  total_percloss /
-                  (perc_weight * valid_batch_num * batch_size + 1e-8),
-                  "RMS: ",
-                  rms)
-            save_lens(
-                lens,
-                config["record_folder"] +
-                "/lens/lens_{}.pkl".format(ep))
-            torch.cuda.empty_cache()
+            for batch_id in range(valid_batches):
+                start_img_id = batch_id * batch_size
+                end_img_id = min((batch_id + 1) * batch_size, valid_num)
+                fn_list = valid_list_all[start_img_id:end_img_id]
+
+                ep_id = ep * 1000 + batch_id
+                plot_last = (batch_id == valid_batches - 1)
+
+                loss_m, loss_p = valid_recon(
+                    config, lens, net, fn_list,
+                    proj_list, chief_pos_list, h_list,
+                    ep_id, loss_fn_alex, plot_last
+                )
+
+                # Mirror your original aggregation
+                loss = loss_m + loss_p / float(batch_size)
+                print(f"[valid batch {batch_id}/{valid_batches-1}] "
+                      f"loss={float(loss.item()):.6f} | mse={float(loss_m.item()):.6f} | "
+                      f"perc/batch={float(loss_p.item())/batch_size:.6f} | RMS_agg={rms_total:.6f}")
+
+                v_total += float(loss.item())
+                v_mse += float(loss_m.item())
+                v_perc += float(loss_p.item())
+
+                torch.cuda.empty_cache()
+
+            v_denom = max(1, valid_batches)
+            # match your printed metrics
+            rmse_disp = 255.0 * math.sqrt(max(0.0, v_mse / (mse_weight * v_denom + 1e-8)))
+            perc_disp = v_perc / (perc_weight * v_denom * batch_size + 1e-8)
+            print(f"[valid] loss={v_total/v_denom:.6f} | rmse={rmse_disp:.3f} | perc={perc_disp:.6f} | RMS={rms_total:.6f}")
+
+            # Save lens snapshot each epoch
+            try:
+                save_lens(lens, f"{config['record_folder']}/lens/lens_{ep}.pkl")
+            except Exception as e:
+                print(f"[warn] save_lens failed at epoch {ep}: {e}")
+
             net.train()
 
-        loss_list[ep] = total_loss
-        dataloss_list[ep] = total_mseloss
-        rmsloss_list[ep] = rms
-        if total_loss < min_loss:
-            min_loss = total_loss
-            torch.save(net, config["record_folder"] + "/net_opt.pth")
-            torch.save(
-                net.state_dict(),
-                config["record_folder"] +
-                "/net_opt_dict.pth")
-            if config["use_deeplens"]:
-                lens.write_lens_json(config["record_folder"] + "/lens_opt.json")
-            else:
-                save_lens(lens, config["record_folder"] + "/lens_opt.pkl")
+        # -----------------------
+        # Book-keeping / early stop
+        # -----------------------
+        loss_list[ep] = v_total
+        dataloss_list[ep] = v_mse
+        rmsloss_list[ep] = rms_total
+
+        if v_total < min_loss and ep > 0:
+            min_loss = v_total
             best_ep = ep
             patience = 0
+
+            # Save best net + lens
+            try:
+                torch.save(net, f"{config['record_folder']}/net_opt.pth")
+                torch.save(net.state_dict(), f"{config['record_folder']}/net_opt_dict.pth")
+                if bool(config.get("use_deeplens", False)):
+                    lens.write_lens_json(f"{config['record_folder']}/lens_opt.json")
+                else:
+                    save_lens(lens, f"{config['record_folder']}/lens_opt.pkl")
+            except Exception as e:
+                print(f"[warn] checkpoint save failed at epoch {ep}: {e}")
         else:
             patience += 1
-        print("TOTAL LOSS: ", total_loss, valid_batch_num)
-        print("The best performance is obtained at {} epoch with {}".format(best_ep, min_loss))
-        plot_loss_curve(config, loss_list, dataloss_list, rmsloss_list, best_ep, ep)
-        h_dim = int(np.sqrt(h_list[2][:, 0].shape[0]))
-        # h_cent = h_list[2][:, 12].view(h_dim, h_dim)
-        h_sum = torch.sum(h_list[2], dim=1).view(h_dim, h_dim)
-        plt.imshow(torch.abs(h_sum).detach().cpu().numpy())
-        plt.colorbar()
-        plt.savefig("{}/psf/u_est_{}_{}.png".format(config["record_folder"], ep, 12))
-        plt.close()
-        torch.cuda.empty_cache()
-        if patience >= config["earlystop"]:
+
+        print(f"[epoch {ep}] total_valid_loss={v_total:.6f} (best@{best_ep}={min_loss:.6f})")
+
+        try:
+            plot_loss_curve(config, loss_list, dataloss_list, rmsloss_list, best_ep, ep)
+        except Exception as e:
+            print(f"[warn] plot_loss_curve failed at epoch {ep}: {e}")
+
+        # Optional PSF visualization (guarded)
+        try:
+            if h_list:
+                h_dim = int(math.isqrt(h_list[-1].shape[0])) if h_list[-1].dim() == 2 else int(math.isqrt(h_list[-1].shape[0]))
+                h_sum = torch.sum(h_list[-1], dim=1).view(h_dim, h_dim)
+                plt.imshow(torch.abs(h_sum).detach().cpu().numpy())
+                plt.colorbar()
+                plt.savefig(f"{config['record_folder']}/psf/u_est_{ep}_sum.png", bbox_inches="tight")
+                plt.close()
+        except Exception as e:
+            print(f"[warn] PSF viz failed at epoch {ep}: {e}")
+
+        if patience >= earlystop:
+            print(f"[early stop] patience {patience} reached (>= {earlystop}).")
             break
-    return
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        ep_toc = time.perf_counter()
+        print(f"[epoch {ep}] time: {ep_toc - ep_tic:.2f}s")
+
+    print(f"Best epoch: {best_ep} with loss {min_loss:.6f}")
