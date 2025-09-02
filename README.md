@@ -7,7 +7,7 @@
 ---
 
 <p align="center">
-  <img src="docs/figures/teaser.png" alt="Teaser Figure" width="80%"/>
+  <img src="images/DiffWave.png" alt="Teaser Figure" width="80%"/>
 </p>
 
 ---
