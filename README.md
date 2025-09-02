@@ -130,22 +130,15 @@ If you use this code in your work, please cite:
 
 ---
 
-## License
-
-MIT License © 2025 Chi-Jui (Jerry) Ho and contributors
-
----
-
 ## Acknowledgments
 
-- UC San Diego Computational Imaging Lab  
-- [DeepLens](https://github.com/singer-yang/DeepLens) and [DiffOptics](https://github.com/singer-yang/DeepLens) by Xinge Yang *et al.*  
-  ```
-  @article{yang2024end,
-    title={End-to-End Hybrid Refractive-Diffractive Lens Design with Differentiable Ray-Wave Model},
-    author={Yang, Xinge and Souza, Matheus and Wang, Kunyi and Chakravarthula, Praneeth and Fu, Qiang and Heidrich, Wolfgang},
-    journal={arXiv preprint arXiv:2406.00834},
-    year={2024}
-  }
-  ```
-- Community feedback  
+This project builds on the excellent work of the [DeepLens](https://github.com/singer-yang/DeepLens) and DiffOptics frameworks developed by Xinge Yang *et al.*. Their differentiable ray–wave model provided the foundation for extending this project toward end-to-end optimization of computational imaging systems. We gratefully acknowledge their contributions and encourage readers to also cite their work:
+
+```
+@article{yang2024end,
+  title={End-to-End Hybrid Refractive-Diffractive Lens Design with Differentiable Ray-Wave Model},
+  author={Yang, Xinge and Souza, Matheus and Wang, Kunyi and Chakravarthula, Praneeth and Fu, Qiang and Heidrich, Wolfgang},
+  journal={arXiv preprint arXiv:2406.00834},
+  year={2024}
+}
+```
