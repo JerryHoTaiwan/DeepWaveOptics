@@ -267,7 +267,9 @@ def init_opl_prl(
 
     # Correct sign for near-180° cases
     sign = -torch.sign(phi + 1e-8)
-    if (torch.abs(torch.abs(torch.tensor(rot)) - 180) < 1e-2) and (torch.sign(torch.tensor(rot)) == -1):
+    rot_t = rot if isinstance(rot, torch.Tensor) else torch.tensor(rot, dtype=dtype, device=device)
+
+    if (torch.abs(torch.abs(rot_t) - 180) < 1e-2) and (torch.sign(rot_t) == -1):
         sign *= -1
 
     first_dist = point2line_distance(rays.o, baseline) * torch.sin(angle) * sign
