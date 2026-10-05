@@ -91,26 +91,21 @@ provenance for the exact color composition of Supplement Figures 1–2.
 
 ## Reference arrays
 
-`reference/` contains losslessly compressed recovered Zemax FFT/Huygens arrays
-for focused/defocused Cooke and 35/40-degree singlet, with export headers and
-source hashes in `manifest.json`. Load with:
+`reference/archived_dwo_*.npz` contains losslessly compressed saved DWO
+outputs for focused/defocused Cooke and 35/40-degree singlet. Source hashes
+are recorded in `manifest.json`. Load with:
 
 ```python
 import numpy as np
-psf = np.load('benchmarks/reference/triplet_infocus_huygens.npz')['psf']
+psf = np.load('benchmarks/reference/archived_dwo_fov40.npz')['psf']
 ```
 
-`archived_dwo_*.npz` are saved development outputs recovered from the comparison
-workspace. They are useful numerical targets, but their complete execution
-provenance has not been recovered. No resampling, normalization or precision
-conversion was applied during packaging.
-
-Headers preserve wavelength, field, sampling and centering information. They
-are exported metadata, not complete OpticStudio models. In particular, the
-focused Cooke Huygens header reports 1.104 um spacing, 128x128 image sampling,
-64x64 pupil sampling; defocused reports 0.390 um, 1024x1024, 512x512. The
-40-degree singlet Huygens header reports 0.398 um, 2048x2048, 256x256.
-These rounded header spacings should not be silently treated as exact grids.
+These saved development outputs are useful numerical targets, but their complete
+execution provenance has not been recovered. No resampling, normalization or
+precision conversion was applied during packaging. Zemax reference arrays,
+export headers, and models are not supplied in this package. The recovered
+text lens prescriptions are DWO inputs; their conversion provenance from any
+original Zemax model has not been established.
 
 The historical SSIM script peak-normalizes each PSF, resizes the candidate
 with OpenCV to reference resolution, and uses the reference intensity range.
@@ -133,8 +128,8 @@ physical accuracy or timing comparison.
   evidence. The text lens loads sensor z=55.43902587890625 mm. It is not a
   verified focused/defocused pair. The exact focused sensor distance and
   defocus offset remain unresolved; no value was guessed.
-- The original Zemax model filenames occur in the export headers, but matching
-  `.zmx`/`.zos` models were not recovered in the searched project locations.
+- No matching original Zemax models or confirmed model-to-text/JSON conversion
+  provenance were recovered. These materials are outside this release update.
 - The public refactor differs from historical code in sampling control and
   phase handling (historical code subtracts the first OPL before forming
   phase). This patch leaves optical propagation unchanged and does not
