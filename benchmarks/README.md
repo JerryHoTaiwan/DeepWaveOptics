@@ -147,3 +147,10 @@ The full 257x257 recovered 40-degree case ran successfully on CPU with
 40-degree array is 0.9987598123897564 (no resizing). See
 [validation.json](validation.json). This is not a Zemax SSIM measurement or
 proof of published-panel identity; GPU timing was not rerun.
+
+## November 2024 supplementary-grid candidates
+
+Recovered 81-position, three-wavelength singlet/Cooke PSF batches and their
+25-image RGB subsets are in [supplement_candidates](supplement_candidates/README.md).
+RGB composition is verified; exact published-panel and angle-label correspondence
+remains unresolved.
