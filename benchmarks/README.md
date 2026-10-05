@@ -104,8 +104,13 @@ These saved development outputs are useful numerical targets, but their complete
 execution provenance has not been recovered. No resampling, normalization or
 precision conversion was applied during packaging. Zemax reference arrays,
 export headers, and models are not supplied in this package. The recovered
-text lens prescriptions are DWO inputs; their conversion provenance from any
-original Zemax model has not been established.
+text lens prescriptions are DWO inputs. A historical ZMX-to-JSON utility
+(`short_src/rewrite_lens.py`, development commit `26edf5d`, 2025-06-04) and
+JSON-to-TXT utility (`short_src/json2txt.py`, commit `9214c95`, 2025-01-31)
+were confirmed. Regenerating the cellphone TXT from the archived cellphone
+JSON gives an exact textual match. This confirms a conversion workflow, but
+does not establish the original model provenance of the Cooke/singlet
+benchmark prescriptions.
 
 The historical SSIM script peak-normalizes each PSF, resizes the candidate
 with OpenCV to reference resolution, and uses the reference intensity range.
@@ -128,8 +133,11 @@ physical accuracy or timing comparison.
   evidence. The text lens loads sensor z=55.43902587890625 mm. It is not a
   verified focused/defocused pair. The exact focused sensor distance and
   defocus offset remain unresolved; no value was guessed.
-- No matching original Zemax models or confirmed model-to-text/JSON conversion
-  provenance were recovered. These materials are outside this release update.
+- Original ZMX files and conversion tools were found in the development
+  environment. A singlet ZMX shares radii 8/12 mm, thickness 3 mm and image
+  gap 30 mm with the text singlet, but differs in glass naming and aperture
+  settings. It is not certified as the identical benchmark model. Zemax
+  materials remain outside this release update.
 - The public refactor differs from historical code in sampling control and
   phase handling (historical code subtracts the first OPL before forming
   phase). This patch leaves optical propagation unchanged and does not
