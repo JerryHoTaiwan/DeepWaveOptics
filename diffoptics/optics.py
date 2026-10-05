@@ -93,7 +93,7 @@ class Lensgroup(Endpoint):
         self.mts_prepared = False
 
     def load_file(self, filename: pathlib.Path):
-        self.surfaces, self.materials, self.r_last, d_last = self.read_lensfile(str(filename))
+        self.surfaces, self.materials, self.r_last, d_last = self.read_lensfile(str(filename), device=self.device)
         self.d_sensor = d_last + self.surfaces[-1].d
         self._sync()
 
@@ -125,7 +125,7 @@ class Lensgroup(Endpoint):
                 return i
 
     @staticmethod
-    def read_lensfile(filename):
+    def read_lensfile(filename, device=torch.device('cpu')):
         surfaces = []
         materials = []
         ds = [] # no use for now
@@ -156,7 +156,7 @@ class Lensgroup(Endpoint):
                                 b = float(ls[5])
                             else:
                                 ai.append(float(ls[ac]))
-                        surfaces.append(XYPolynomial(r, d_total, J=2, ai=ai, b=b))
+                        surfaces.append(XYPolynomial(r, d_total, J=2, ai=ai, b=b, device=device))
                     elif surface_type == 'B': # B-spline
                         del roc
                         ai = []
@@ -172,12 +172,12 @@ class Lensgroup(Endpoint):
                         ty = ai[:ny+8]
                         ai = ai[ny+8:]
                         c  = ai
-                        surfaces.append(BSpline(r, d, size=[nx, ny], tx=tx, ty=ty, c=c))
+                        surfaces.append(BSpline(r, d, size=[nx, ny], tx=tx, ty=ty, c=c, device=device))
                     elif surface_type == 'M': # mixed-type of X and B
                         raise NotImplementedError()
                     elif surface_type == 'S': # aspheric surface
                         if len(ls) <= 5:
-                            surfaces.append(Aspheric(r, d_total, roc))
+                            surfaces.append(Aspheric(r, d_total, roc, device=device))
                         else:
                             ai = []
                             for ac in range(5, len(ls)):
@@ -185,9 +185,9 @@ class Lensgroup(Endpoint):
                                     conic = float(ls[5])
                                 else:
                                     ai.append(float(ls[ac]))
-                            surfaces.append(Aspheric(r, d_total, roc, conic, ai))
+                            surfaces.append(Aspheric(r, d_total, roc, conic, ai, device=device))
                     elif surface_type == 'A': # aperture
-                        surfaces.append(Aspheric(r, d_total, roc))
+                        surfaces.append(Aspheric(r, d_total, roc, device=device))
                     elif surface_type == 'I': # sensor
                         d_total -= d
                         ds.pop()
@@ -1374,7 +1374,8 @@ class Lensgroup(Endpoint):
         # in local
         #ray_in = self.to_object.transform_ray(ray)
         #print ('is here?', ray.o, ray_in.o)
-        torch.cuda.synchronize()
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
 
         valid, ray_out, oss = self._trace(ray, stop_ind=stop_ind, record=True) 
         assert not torch.isnan(torch.sum(ray_out.d))
@@ -1752,8 +1753,6 @@ class Lensgroup(Endpoint):
 class Surface(PrettyPrinter):
     def __init__(self, r, d, is_square=False, device=torch.device('cuda')):
         # self.r = torch.Tensor(np.array(r))
-        if device == torch.device('cpu'):
-            mm += 1
         if torch.is_tensor(d):
             #self.d = d
             self.d = d.to(device)

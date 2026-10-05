@@ -1,0 +1,48 @@
+{
+  "case": "singlet_40deg",
+  "metadata": {
+    "dtype": "float32",
+    "cmx_dtype": "complex64",
+    "seed": 33,
+    "sample_rad": 1.5,
+    "disp_wv": 532,
+    "layers": 100,
+    "xp_pos": 3,
+    "dim": 257,
+    "width": 0.407,
+    "center": [
+      34.8607623332,
+      0
+    ],
+    "offset_y": -1.9003209864,
+    "offset_x": 0,
+    "view": 40,
+    "rot": 0,
+    "stop_ind": 2,
+    "system_scale": 0.1,
+    "batch_size": 4,
+    "use_color_filter": false,
+    "plot_wf": false,
+    "use_deeplens": false,
+    "single_lens": true,
+    "blocks": [
+      "single_psf"
+    ],
+    "lens_txt": "lenses/single_fov40.txt",
+    "output_folder": "results/reproduction/singlet_40deg",
+    "provenance": "Recovered visualization/0128_single_fov40/single_psf.json; figure-level numerical equivalence is not yet established. Effective layers=100 in historical trace_all for single_lens=True at view>30 degrees; archived request was 300.",
+    "archived_layers": 300,
+    "sensor_z_mm": 33.0,
+    "sensor_spacing_mm": 0.0031796875,
+    "traced_ray_count": 29701,
+    "device": "cpu",
+    "torch_version": "2.0.1+cu118",
+    "normalization": "unit sum",
+    "smoke_test": false
+  },
+  "finite": true,
+  "unit_sum": 1.0000001192092896,
+  "peak_normalized_ssim_to_archived_dwo": 0.9987598123897564,
+  "comparison": "same 257x257 shape; independent peak normalization; no resizing",
+  "limitation": "This is a comparison to a saved development output, not proof of published panel identity or a timing benchmark."
+}

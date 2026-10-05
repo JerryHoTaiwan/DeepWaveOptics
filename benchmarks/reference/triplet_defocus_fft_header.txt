@@ -1,0 +1,17 @@
+Listing of FFT PSF Data
+
+File : cooke_cmp.zmx
+Title:
+Date : 2/4/2025
+
+
+FFT PSF
+0.5320 µm at 0.00 (deg).
+Data spacing is 1.549 µm.
+Data area is 396.631 µm wide.
+Surface: Image
+Reference Coordinates: 0.00000E+00, 0.00000E+00
+Pupil grid size: 256 by 256
+Image grid size: 512 by 512
+Center point is: row 257, column 256
+Values are not normalized.

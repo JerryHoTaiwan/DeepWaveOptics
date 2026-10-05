@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from utils import build_folder, load_config
 
 # Add project root (if needed) before third-party/local imports that live one level up
-sys.path.append("..")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deeplens import GeoLens  # noqa: E402
 import diffoptics as do        # noqa: E402
 

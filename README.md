@@ -36,6 +36,15 @@ It is designed for research in computational imaging, holography, and optics-awa
 
 ---
 
+## PSF reproduction assets
+
+Recovered lens files, a standalone 40-degree singlet runner, Zemax reference
+PSFs, and documented sampling conventions are available in
+[benchmarks/README.md](benchmarks/README.md). Start with
+`python scripts/reproduce_psf.py --check` from the repository root.
+The documentation distinguishes recovered experiments from figure settings
+whose provenance remains unresolved.
+
 ## Installation
 
 Clone the repository:

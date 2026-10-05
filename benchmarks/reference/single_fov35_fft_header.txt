@@ -1,0 +1,17 @@
+Listing of FFT PSF Data
+
+File : LENS.ZMX
+Title:
+Date : 2/4/2025
+
+
+FFT PSF
+0.5320 µm at 35.00 (deg).
+Data spacing is 0.865 µm.
+Data area is 885.868 µm wide.
+Surface: Image
+Reference Coordinates: 0.00000E+00, 2.72045E+01
+Pupil grid size: 512 by 512
+Image grid size: 1024 by 1024
+Center point is: row 513, column 512
+Values are not normalized.

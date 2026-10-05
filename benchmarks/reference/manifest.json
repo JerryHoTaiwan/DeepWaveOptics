@@ -1,0 +1,158 @@
+[
+  {
+    "file": "triplet_infocus_huygens.npz",
+    "array_key": "psf",
+    "shape": [
+      128,
+      128
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/triplet_infocus_huygens.npy",
+    "source_sha256": "35777c2963410646d5846e09ca31ef97b1835a1317648eba6827e9f3e4dbe0d7",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "triplet_defocus_huygens.npz",
+    "array_key": "psf",
+    "shape": [
+      1024,
+      1024
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/triplet_defocus_huygens.npy",
+    "source_sha256": "7334743105e4c000aeb59cdf1e46508e0729d2ceed7b59e24e207af1c7ea9720",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "triplet_infocus_fft.npz",
+    "array_key": "psf",
+    "shape": [
+      32,
+      32
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/triplet_infocus_fft.npy",
+    "source_sha256": "73e32fa1433bfdfb74b071e538abfa4b8773e79e490c54740bfa28d15c57cffa",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "triplet_defocus_fft.npz",
+    "array_key": "psf",
+    "shape": [
+      256,
+      256
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/triplet_defocus_fft.npy",
+    "source_sha256": "6d9b42a656ca9f1f9357efb0bbaea2f6d1ed97637c43d8f2888770ff9c8e7f26",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "single_fov35_Huygens_sp256.npz",
+    "array_key": "psf",
+    "shape": [
+      2048,
+      2048
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/single_fov35_Huygens_sp256.npy",
+    "source_sha256": "c7de1b07165dea495f4050890b069a540de40f559a29911fca4afe596650376d",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "single_fov40_Huygens_sp256.npz",
+    "array_key": "psf",
+    "shape": [
+      2048,
+      2048
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/single_fov40_Huygens_sp256.npy",
+    "source_sha256": "0574afdda8f59a83a022edae609f2698f769a01b33057f5e3219260347c8193f",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "single_fov35_fft.npz",
+    "array_key": "psf",
+    "shape": [
+      1024,
+      1024
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/single_fov35_fft.npy",
+    "source_sha256": "5d480627bcd14e829a231891f0d296e7a981e028595196ba0a37b3436343f752",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "single_fov40_fft.npz",
+    "array_key": "psf",
+    "shape": [
+      1024,
+      1024
+    ],
+    "dtype": "float64",
+    "source": "zemax_psfs/single_fov40_fft.npy",
+    "source_sha256": "89fd2fe2a7d82f9a51c31d91eca93d33aafadae185cedab054d3522fd4bd7fa3",
+    "finite": true,
+    "normalization": "preserved from recovered NPY; see export header"
+  },
+  {
+    "file": "archived_dwo_in_focus.npz",
+    "array_key": "psf",
+    "shape": [
+      257,
+      257
+    ],
+    "dtype": "float64",
+    "source": "comparison_workspace/ours/psf_in_focus.npy",
+    "source_sha256": "9d8b5b7d5af8df7e8bf4f201b983016fd2134e6b4379b5f77c3604be32a6a93f",
+    "finite": true,
+    "normalization": "preserved unit-sum archived array; complete run provenance unresolved"
+  },
+  {
+    "file": "archived_dwo_out_of_focus.npz",
+    "array_key": "psf",
+    "shape": [
+      257,
+      257
+    ],
+    "dtype": "float64",
+    "source": "comparison_workspace/ours/psf_out_of_focus.npy",
+    "source_sha256": "9773ad6c9c9c8f271e99001b43fe84ae8da4e9f12ccd514d73cc104465926e22",
+    "finite": true,
+    "normalization": "preserved unit-sum archived array; complete run provenance unresolved"
+  },
+  {
+    "file": "archived_dwo_fov35.npz",
+    "array_key": "psf",
+    "shape": [
+      257,
+      257
+    ],
+    "dtype": "float64",
+    "source": "comparison_workspace/ours/psf_fov35.npy",
+    "source_sha256": "bb4f26893739a6df5b83c5a8c01708589c833ff6186950d230802af486fe568b",
+    "finite": true,
+    "normalization": "preserved unit-sum archived array; complete run provenance unresolved"
+  },
+  {
+    "file": "archived_dwo_fov40.npz",
+    "array_key": "psf",
+    "shape": [
+      257,
+      257
+    ],
+    "dtype": "float64",
+    "source": "comparison_workspace/ours/psf_fov40.npy",
+    "source_sha256": "5186ec7f9cade88a8ede021e62887d417a3842360d3cc3c5b8959d3344d7c0fd",
+    "finite": true,
+    "normalization": "preserved unit-sum archived array; complete run provenance unresolved"
+  }
+]

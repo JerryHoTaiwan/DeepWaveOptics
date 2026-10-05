@@ -1,42 +1,45 @@
 {
-  "display_folder": "/home/ubuntu/DeepWaveOptics/results/singlet/",
-  "record_folder": "/home/ubuntu/DeepWaveOptics/results/singlet/",
-
+  "display_folder": "results/singlet/",
+  "record_folder": "results/singlet/",
   "dtype": "float32",
   "physic": "wave",
   "cmx_dtype": "complex64",
-
   "seed": 33,
-
-  "blocks": ["show_psf"],
+  "blocks": [
+    "show_psf"
+  ],
   "use_deeplens": false,
-
   "load_surface_from_txt": true,
   "load_surface": false,
-  "lens_txt": "/home/ubuntu/DiffWaveOptics/lens/single_fov40.txt",
-  "lens_name": "path/to/deeplens_file.json",
-
+  "lens_txt": "lenses/single_fov40.txt",
+  "lens_name": "lenses/single_fov40.txt",
   "plot_zoomin": true,
   "zoomin_dim": 257,
-  "zi_idx": [4, 5],
-  "zi_ratio": {"4": 0.02, "5": 0.02},
-
+  "zi_idx": [
+    4,
+    5
+  ],
+  "zi_ratio": {
+    "4": 0.02,
+    "5": 0.02
+  },
   "dist_scene": 100000.0,
   "sample_rad": 1.5,
   "disp_wv": 650,
   "layers": 180,
-
   "dim": 257,
   "interval": 128,
   "psf_rad": 0.04,
   "width": 20,
-  "center": [0, 0],
+  "center": [
+    0,
+    0
+  ],
   "system_scale": 0.1,
   "stop_ind": 2,
   "chief_gap": 8,
   "z_in_sample": 1,
   "batch_size": 4,
-
   "use_color_filter": false,
   "plot_wf": false
 }

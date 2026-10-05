@@ -1,0 +1,6 @@
+011-1580 from lab
+type distance roc diameter material
+O    0        0    100     AIR
+S    0        8   10      N-BK7
+S    3      12    10      AIR
+I    30    0    25      AIR

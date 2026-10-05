@@ -1,0 +1,20 @@
+Listing of Huygens PSF Data
+
+File : LENS.ZMX
+Title:
+Date : 1/27/2025
+
+
+
+0.5320 to 0.5320 µm at 35.00 (deg).
+Data spacing is 0.398 µm.
+Data area is 815.074 by 815.074 µm.
+Strehl ratio: 0.001
+Pupil grid size: 256 by 256
+Image grid size: 2048 by 2048
+Center point is: 1025, 1025
+Center coordinates  :   0.00000000E+00,   2.72045324E+01 Millimeters
+Centroid offset     :  -6.40733446E-20,  -6.00776885E-03 Millimeters
+Centroid coordinates:  -6.40733446E-20,   2.71985247E+01 Millimeters
+
+Values are relative intensity.
