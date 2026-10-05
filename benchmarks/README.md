@@ -83,11 +83,10 @@ The original public `show_psf` function uses a hard-coded 532 nm wavelength;
 `disp_wv=650` in its config does not change that function's wavelength.
 The new single-case runner uses `disp_wv` explicitly.
 The public `display` function defaults to [440,510,650] nm.
-Historical `short_src/stack_multi_psf.py` stacks those arrays in that order,
-scales each channel independently to peak 250, and writes with OpenCV (BGR).
-Thus 440/510/650 correspond to displayed blue/green/red in that script.
-That establishes one historical visualization convention, not confirmed
-provenance for the exact color composition of Supplement Figures 1–2.
+The authors confirm that color PSFs are rendered separately at the RGB
+wavelengths and placed in their respective channels. The main four-case
+comparison is monochromatic at 532 nm. Exact supplementary grid settings
+remain under investigation.
 
 ## Reference arrays
 
@@ -129,10 +128,10 @@ physical accuracy or timing comparison.
   compares monochromatic 532 nm focused/defocused Cooke and 35/40-degree singlet.
   The default runner recovers a 40-degree singlet experiment; exact equality
   to the published panel still requires checking.
-- `archive/cooke_comparison.json` and `lenses/cooke_cmp.txt` are recovered Cooke
-  evidence. The text lens loads sensor z=55.43902587890625 mm. It is not a
-  verified focused/defocused pair. The exact focused sensor distance and
-  defocus offset remain unresolved; no value was guessed.
+- The recovered four-case configurations, rerun arrays and measured agreement are
+  documented in [four_cases.md](four_cases.md). Cooke focused sensor z is
+  60.43902587890625 mm; the defocused candidate is 55.43902587890625 mm.
+  The defocused rerun has residual disagreement and is not an exact reproduction.
 - Original ZMX files and conversion tools were found in the development
   environment. A singlet ZMX shares radii 8/12 mm, thickness 3 mm and image
   gap 30 mm with the text singlet, but differs in glass naming and aperture

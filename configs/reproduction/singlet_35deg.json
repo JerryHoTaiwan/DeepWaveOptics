@@ -1,0 +1,32 @@
+{
+  "dtype": "float32",
+  "cmx_dtype": "complex64",
+  "seed": 33,
+  "sample_rad": 1.5,
+  "disp_wv": 532,
+  "layers": 100,
+  "xp_pos": 3,
+  "dim": 257,
+  "width": 0.407,
+  "center": [
+    27.20416608900106,
+    0
+  ],
+  "offset_y": -1.5857700686,
+  "offset_x": 0,
+  "view": 35,
+  "rot": 0,
+  "stop_ind": 2,
+  "system_scale": 0.1,
+  "batch_size": 4,
+  "use_color_filter": false,
+  "plot_wf": false,
+  "use_deeplens": false,
+  "single_lens": true,
+  "blocks": [
+    "single_psf"
+  ],
+  "lens_txt": "lenses/single_fov40.txt",
+  "output_folder": "results/reproduction/singlet_35deg",
+  "provenance": "Recovered configuration checked against saved development PSF; see benchmarks/four_cases.md for evidence and residual differences."
+}

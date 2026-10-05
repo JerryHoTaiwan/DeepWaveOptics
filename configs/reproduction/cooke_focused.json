@@ -1,0 +1,31 @@
+{
+  "dtype": "float32",
+  "cmx_dtype": "complex64",
+  "seed": 33,
+  "sample_rad": 1.5,
+  "disp_wv": 532,
+  "layers": 100,
+  "xp_pos": 3,
+  "dim": 257,
+  "width": 0.0721675,
+  "center": [
+    0,
+    0
+  ],
+  "offset_y": 0,
+  "offset_x": 0,
+  "view": 0,
+  "rot": 0,
+  "stop_ind": 3,
+  "system_scale": 0.1,
+  "batch_size": 4,
+  "use_color_filter": false,
+  "plot_wf": false,
+  "use_deeplens": false,
+  "single_lens": false,
+  "blocks": [],
+  "lens_txt": "lenses/cooke_cmp.txt",
+  "output_folder": "results/reproduction/cooke_focused",
+  "provenance": "Recovered configuration checked against saved development PSF; see benchmarks/four_cases.md for evidence and residual differences.",
+  "sensor_z_mm": 60.43902587890625
+}
